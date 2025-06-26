@@ -1,0 +1,213 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reporte de Calificaciones (Cliente)</title>
+  <!-- Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- SheetJS para importar/exportar Excel (CDN) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { display: flex; flex-direction: row; margin: 0; padding: 0; background-color: #f4f6f8; color: #333; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .formulario-container, .sidebar { background: #fff; margin: 20px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    .formulario-container { flex: 2; }
+    .sidebar { flex: 1; }
+    h1, h3 { color: #2c3e50; }
+    label { display: block; margin: 10px 0 5px; font-weight: bold; }
+    input[type="text"], input[type="date"], select { width: 100%; padding: 8px; margin-bottom: 15px; border: 1px solid #ccc; border-radius: 6px; }
+    button { margin-top: 10px; padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; color: #fff; background-color: #2980b9; font-weight: bold; margin-right: 10px; }
+    button:hover { background-color: #3498db; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    table th, table td { padding: 10px; border: 1px solid #ccc; text-align: left; }
+    .AD { background-color: #4CAF50; color: #fff; }
+    .A { background-color: #8BC34A; color: #fff; }
+    .B { background-color: #FFC107; color: #000; }
+    .C { background-color: #F44336; color: #fff; }
+    ul { padding-left: 20px; }
+    canvas { margin-top: 20px; }
+    @media(max-width:900px){ body{ flex-direction:column;} }
+  </style>
+</head>
+<body>
+  <div class="formulario-container">
+    <h1>Reporte de Calificaciones</h1>
+    <form id="formulario">
+      <label for="curso">Curso:</label>
+      <input type="text" id="curso" name="curso">
+      <label for="grado">Grado:</label>
+      <input type="text" id="grado" name="grado">
+      <label for="seccion">Sección:</label>
+      <input type="text" id="seccion" name="seccion">
+      <label for="trimestre">Trimestre:</label>
+      <input type="text" id="trimestre" name="trimestre">
+      <label for="docente">Docente:</label>
+      <input type="text" id="docente" name="docente">
+      <label for="fecha">Fecha:</label>
+      <input type="date" id="fecha" name="fecha">
+      <h3>Listado de Estudiantes</h3>
+      <table id="tablaEstudiantes">
+        <tr><th>Apellidos y Nombres</th><th>Calificación</th></tr>
+      </table>
+      <input type="file" id="fileInput" accept=".xlsx" style="margin-top:10px;">
+      <button type="button" id="btnImportar">Importar Excel</button>
+      <button type="button" id="btnExportar">Exportar a Excel</button>
+      <button type="button" id="btnAgregar">Agregar Estudiante</button>
+    </form>
+    <template id="fila-template">
+      <tr>
+        <td><input type="text" name="nombre[]"></td>
+        <td>
+          <select name="nota[]" class="nota-select">
+            <option value="">Seleccione</option>
+            <option value="AD">AD</option>
+            <option value="A">A</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+          </select>
+        </td>
+      </tr>
+    </template>
+  </div>
+  <div class="sidebar">
+    <h3>Leyenda de Calificaciones</h3>
+    <ul>
+      <li><strong>AD</strong>: El estudiante demuestra aprendizajes más allá de lo esperado</li>
+      <li><strong>A</strong>: El estudiante evidencia el nivel esperado respecto a la competencia</li>
+      <li><strong>B</strong>: El estudiante está próximo o cerca al nivel esperado respecto a la competencia</li>
+      <li><strong>C</strong>: El estudiante muestra un progreso mínimo en una competencia de acuerdo al nivel esperado</li>
+    </ul>
+    <h3>Resumen de Calificaciones</h3>
+    <div id="resumen">AD: 0 | A: 0 | B: 0 | C: 0</div>
+    <canvas id="graficoResumen" width="400" height="200"></canvas>
+  </div>
+  <script>
+    // Chart.js gráfico
+    let chart;
+    function generarGrafico(resumen) {
+      const ctx = document.getElementById('graficoResumen').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['AD','A','B','C'],
+          datasets: [{
+            data: [resumen.AD,resumen.A,resumen.B,resumen.C],
+            backgroundColor: ['#4CAF50','#8BC34A','#FFC107','#F44336']
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function agregarFila() {
+      const tpl = document.getElementById('fila-template');
+      const clone = document.importNode(tpl.content, true);
+      document.getElementById('tablaEstudiantes').appendChild(clone);
+    }
+
+    function actualizarResumen() {
+      const resumen = { AD:0, A:0, B:0, C:0 };
+      document.querySelectorAll('select.nota-select').forEach(s => {
+        if (s.value) resumen[s.value]++;
+      });
+      document.getElementById('resumen').textContent = `AD: ${resumen.AD} | A: ${resumen.A} | B: ${resumen.B} | C: ${resumen.C}`;
+      generarGrafico(resumen);
+    }
+
+function importarExcel() {
+  const file = document.getElementById('fileInput').files[0];
+  if (!file) return alert('Selecciona un archivo .xlsx');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const data = new Uint8Array(e.target.result);
+    const wb   = XLSX.read(data, { type: 'array' });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:'' });
+
+    // Reset y limpieza
+    document.getElementById('formulario').reset();
+    document.querySelectorAll('#tablaEstudiantes tr:not(:first-child)')
+      .forEach(r => r.remove());
+
+    // Cabecera
+    ['curso','grado','seccion','trimestre','docente','fecha']
+      .forEach((field, i) => {
+        const cellVal = rows[i] && rows[i][1] ? rows[i][1] : '';
+        document.getElementById(field).value = cellVal;
+      });
+
+    // Busca índice de encabezado de alumnos
+    const headerIndex = rows.findIndex(r => r[0] === 'Apellidos y Nombres');
+    if (headerIndex < 0) {
+      return alert('No se encontró la cabecera de estudiantes en el archivo');
+    }
+
+    // Empieza la importación línea a línea
+    for (let i = headerIndex + 1; i < rows.length; i++) {
+      const [nombre, nota] = rows[i];
+      if (!nombre) break;
+
+      // Clona y añade
+      const tpl   = document.getElementById('fila-template');
+      const clone = document.importNode(tpl.content, true);
+      // Le asignamos un id único a la fila para luego buscarla
+      const tr = clone.querySelector('tr');
+      const rowId = `fila-${i}`;
+      tr.id = rowId;
+      document.getElementById('tablaEstudiantes').appendChild(clone);
+
+      // Ahora sí recuperamos la fila por id y buscamos dentro de ella
+      const newRow = document.getElementById(rowId);
+      console.log('Nueva fila importada:', newRow);
+
+      const inp    = newRow.querySelector('input[name="nombre[]"]');
+      const select = newRow.querySelector('select[name="nota[]"]');
+
+      if (!inp || !select) {
+        console.error('No encontré input o select en la fila clonada', newRow);
+        continue;
+      }
+      inp.value    = nombre;
+      select.value = nota;
+    }
+
+    actualizarResumen();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+
+    function exportarExcel() {
+      const form = document.getElementById('formulario');
+      const header = [['Curso',form['curso'].value],['Grado',form['grado'].value],['Sección',form['seccion'].value],['Trimestre',form['trimestre'].value],['Docente',form['docente'].value],['Fecha',form['fecha'].value],[]];
+      const students = [['Apellidos y Nombres','Calificación']];
+      const summary = { AD:0, A:0, B:0, C:0 };
+      document.querySelectorAll('#tablaEstudiantes tr:not(:first-child)').forEach(tr => {
+        const name = tr.querySelector('input[name="nombre[]"]').value;
+        const note = tr.querySelector('select[name="nota[]"]').value;
+        if (note) summary[note]++;
+        students.push([name, note]);
+      });
+      const foot = [[], ['Resumen de Calificaciones'], ['AD',summary.AD], ['A',summary.A], ['B',summary.B], ['C',summary.C]];
+      const ws = XLSX.utils.aoa_to_sheet([...header,...students,...foot]);
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Reporte'); XLSX.writeFile(wb,'reporte_calificaciones.xlsx');
+    }
+
+    // Enlazar eventos inmediatamente (script está al final)
+    document.getElementById('btnAgregar').addEventListener('click', agregarFila);
+    document.getElementById('btnImportar').addEventListener('click', importarExcel);
+    document.getElementById('btnExportar').addEventListener('click', exportarExcel);
+    document.getElementById('tablaEstudiantes').addEventListener('change', e => {
+      if (e.target.matches('select.nota-select')) actualizarResumen();
+    });
+
+    // Inicializar gráfica vacía
+    generarGrafico({AD:0, A:0, B:0, C:0});
+  </script>
+</body>
+</html>
